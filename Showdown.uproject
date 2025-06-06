@@ -27,5 +27,6 @@
 		"Android",
 		"AllDesktop",
 		"WindowsNoEditor"
-	]
+	],
+	"EngineAssociation": "5.5"
 }

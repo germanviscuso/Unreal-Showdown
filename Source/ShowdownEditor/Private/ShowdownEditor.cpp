@@ -1,4 +1,6 @@
-#include "ShowdownEditor.h"
+// Source/ShowdownEditor/Private/ShowdownEditor.cpp
+
+#include "ShowdownEditor.h" // PCH must be first
 #include "ShowdownEditorCommands.h"
 #include "Modules/ModuleManager.h"
 #include "LevelEditor.h"
@@ -7,35 +9,42 @@
 #include "Misc/Paths.h"
 #include "HAL/PlatformFileManager.h"
 #include "HighResScreenshot.h"
-#include "Editor/EditorEngine.h" // Required for GEditor
+#include "Editor/EditorEngine.h"
+#include "LevelEditorViewport.h"
 
-// Define a log category for our module
 DEFINE_LOG_CATEGORY_STATIC(LogShowdownEditor, Log, All);
 
 void FShowdownEditorModule::StartupModule()
 {
-    UE_LOG(LogShowdownEditor, Warning, TEXT("--- ShowdownEditorModule is starting up! ---"));
+    UE_LOG(LogShowdownEditor, Log, TEXT("ShowdownEditorModule starting up."));
 
-    // Register the command set
     FShowdownEditorCommands::Register();
     PluginCommands = MakeShareable(new FUICommandList);
 
-    // Map the "CaptureScene" command to our OnCaptureScenePressed function
     PluginCommands->MapAction(
         FShowdownEditorCommands::Get().CaptureScene,
         FExecuteAction::CreateRaw(this, &FShowdownEditorModule::OnCaptureScenePressed),
         FCanExecuteAction());
 
-    // Add a menu item to the "Tools" menu
     FLevelEditorModule& LevelEditorModule = FModuleManager::LoadModuleChecked<FLevelEditorModule>("LevelEditor");
-    {
-        TSharedPtr<FExtender> MenuExtender = MakeShareable(new FExtender());
-        MenuExtender->AddMenuExtension("LevelEditor", EExtensionHook::After, PluginCommands, FMenuExtensionDelegate::CreateLambda([](FMenuBuilder& Builder)
-        {
-            Builder.AddMenuEntry(FShowdownEditorCommands::Get().CaptureScene);
-        }));
-        LevelEditorModule.GetMenuExtensibilityManager()->AddExtender(MenuExtender);
-    }
+
+    // FIX #1: This registers our command list globally, making the shortcut work.
+    LevelEditorModule.GetGlobalLevelEditorActions()->Append(PluginCommands.ToSharedRef());
+
+    // FIX #2: This adds our tool to a new section within the main "Tools" menu.
+    TSharedPtr<FExtender> MenuExtender = MakeShareable(new FExtender());
+    MenuExtender->AddMenuExtension(
+        "LevelEditor", // The name of the menu to extend
+        EExtensionHook::After,
+        PluginCommands,
+        FMenuExtensionDelegate::CreateLambda([](FMenuBuilder& MenuBuilder)
+            {
+                MenuBuilder.BeginSection("ShowdownEditorTools", TAttribute<FText>(FText::FromString("Custom Tools")));
+                MenuBuilder.AddMenuEntry(FShowdownEditorCommands::Get().CaptureScene);
+                MenuBuilder.EndSection();
+            })
+    );
+    LevelEditorModule.GetMenuExtensibilityManager()->AddExtender(MenuExtender);
 }
 
 void FShowdownEditorModule::ShutdownModule()
@@ -45,27 +54,35 @@ void FShowdownEditorModule::ShutdownModule()
 
 void FShowdownEditorModule::OnCaptureScenePressed()
 {
-    // Get the active level viewport
+    // FIX #3: This section correctly forces Game View for the screenshot.
     FViewport* ActiveViewport = GEditor->GetActiveViewport();
-    if (!ActiveViewport)
+    FLevelEditorViewportClient* ViewportClient = static_cast<FLevelEditorViewportClient*>(ActiveViewport->GetClient());
+
+    if (!ViewportClient)
     {
-        UE_LOG(LogShowdownEditor, Warning, TEXT("Could not find an active viewport to capture."));
+        UE_LOG(LogShowdownEditor, Warning, TEXT("Could not find a valid Level Editor Viewport Client."));
         return;
     }
 
-    // Set the file path in the project's Saved/Screenshots folder
+    // Store the current view state so we can restore it later
+    const bool bWasInGameView = ViewportClient->IsInGameView();
+
+    // Force the viewport into Game View to hide gizmos
+    ViewportClient->SetGameView(true);
+
+    // Set the file path
     FString Directory = FPaths::ProjectSavedDir() + TEXT("Screenshots/");
     FString Filename = FString::Printf(TEXT("SceneCapture_%s.png"), *FDateTime::Now().ToString());
     FString FilePath = FPaths::ConvertRelativePathToFull(Directory + Filename);
-
-    // Ensure the directory exists
     FPlatformFileManager::Get().GetPlatformFile().CreateDirectoryTree(*Directory);
 
-    // Request the screenshot. The 'true' argument ensures we capture in game view (no gizmos).
-    FScreenshotRequest::RequestScreenshot(FilePath, true, false);
+    // Request the screenshot
+    FScreenshotRequest::RequestScreenshot(FilePath, false, false);
 
-    UE_LOG(LogShowdownEditor, Log, TEXT("Scene capture requested and will be saved to: %s"), *FilePath);
+    // Restore the original view state
+    ViewportClient->SetGameView(bWasInGameView);
+
+    UE_LOG(LogShowdownEditor, Log, TEXT("Scene capture requested. Saved to: %s"), *FilePath);
 }
-
 
 IMPLEMENT_MODULE(FShowdownEditorModule, ShowdownEditor)

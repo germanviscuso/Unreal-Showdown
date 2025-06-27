@@ -25,7 +25,7 @@ public class ShowdownEditor : ModuleRules
                 "InputCore",
                 "UnrealEd", // Important for editor access
                 "LevelEditor", // Important for menu extensions
-                "ShowdownQuest" 
+                "ShowdownQuest"
             }
         );
     }

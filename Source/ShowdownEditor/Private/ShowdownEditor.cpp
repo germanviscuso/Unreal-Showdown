@@ -74,31 +74,6 @@ void FShowdownEditorModule::OnCaptureScenePressed()
     }
 }
 
-void FShowdownEditorModule::OnImageVariationSuccess(const FImageVariationResponse& Response, const FOpenAIResponseMetadata& Meta)
-{
-    OpenAIProvider->OnCreateImageVariationCompleted().RemoveAll(this);
-    OpenAIProvider->OnRequestError().RemoveAll(this);
-
-    if (Response.Data.Num() > 0)
-    {
-        const FString URL = Response.Data[0].URL;
-        UE_LOG(LogShowdownEditor, Warning, TEXT("OpenAI Image Variation SUCCESS! URL: %s"), *URL);
-
-        // --- NEW ---
-        // Now, let's download the image from this URL
-        UE_LOG(LogShowdownEditor, Log, TEXT("Downloading new image from URL..."));
-        TSharedRef<IHttpRequest, ESPMode::ThreadSafe> HttpRequest = FHttpModule::Get().CreateRequest();
-        HttpRequest->OnProcessRequestComplete().BindRaw(this, &FShowdownEditorModule::OnImageDownloaded);
-        HttpRequest->SetURL(URL);
-        HttpRequest->SetVerb(TEXT("GET"));
-        HttpRequest->ProcessRequest();
-    }
-    else
-    {
-        UE_LOG(LogShowdownEditor, Error, TEXT("OpenAI Image Variation request succeeded but returned no data."));
-    }
-}
-
 // Add this new function to your ShowdownEditor.cpp file
 void FShowdownEditorModule::OnImageDownloaded(FHttpRequestPtr Request, FHttpResponsePtr Response, bool bWasSuccessful)
 {
@@ -128,12 +103,7 @@ void FShowdownEditorModule::OnImageDownloaded(FHttpRequestPtr Request, FHttpResp
     }
 }
 
-void FShowdownEditorModule::OnImageVariationError(const FString& URL, const FString& Content)
-{
-    OpenAIProvider->OnCreateImageVariationCompleted().RemoveAll(this);
-    OpenAIProvider->OnRequestError().RemoveAll(this);
-    UE_LOG(LogShowdownEditor, Error, TEXT("OpenAI Image Variation FAILED. URL: %s, Error: %s"), *URL, *Content);
-}
+// Replace the SendImageToOpenAI function in ShowdownEditor.cpp
 
 void FShowdownEditorModule::SendImageToOpenAI(const FString& ImagePath)
 {
@@ -152,18 +122,54 @@ void FShowdownEditorModule::SendImageToOpenAI(const FString& ImagePath)
         return;
     }
 
-    FOpenAIImageVariation ImageVariationRequest;
-    ImageVariationRequest.Image = ImagePath;
-    ImageVariationRequest.N = 1;
-    ImageVariationRequest.Size = UOpenAIFuncLib::OpenAIImageSizeDalle2ToString(EImageSizeDalle2::Size_1024x1024);
-    ImageVariationRequest.Response_Format = UOpenAIFuncLib::OpenAIImageFormatToString(EOpenAIImageFormat::URL);
+    // --- THIS IS THE MAIN CHANGE ---
+    // We now use FOpenAIImageEdit and set the prompt.
+    FOpenAIImageEdit ImageEditRequest;
+    ImageEditRequest.Image.Add(ImagePath); // The path to the image file
+    ImageEditRequest.Prompt = TEXT("A moody, post-apocalyptic version of this scene, with rubble and overgrown vines."); // Our new prompt!
+    ImageEditRequest.N = 1;
+    ImageEditRequest.Size = UOpenAIFuncLib::OpenAIImageSizeDalle2ToString(EImageSizeDalle2::Size_1024x1024);
+    ImageEditRequest.Response_Format = UOpenAIFuncLib::OpenAIImageFormatToString(EOpenAIImageFormat::URL);
 
-    OpenAIProvider->OnCreateImageVariationCompleted().AddRaw(this, &FShowdownEditorModule::OnImageVariationSuccess);
+    // Bind the new success and error handlers
+    OpenAIProvider->OnCreateImageEditCompleted().AddRaw(this, &FShowdownEditorModule::OnImageEditSuccess);
+    OpenAIProvider->OnRequestError().AddRaw(this, &FShowdownEditorModule::OnImageEditError);
 
-    OpenAIProvider->OnRequestError().AddRaw(this, &FShowdownEditorModule::OnImageVariationError);
+    UE_LOG(LogShowdownEditor, Log, TEXT("Sending image EDIT request to OpenAI for file: %s"), *ImagePath);
+    // Call the correct API function
+    OpenAIProvider->CreateImageEdit(ImageEditRequest, Auth);
+}
 
-    UE_LOG(LogShowdownEditor, Log, TEXT("Sending image variation request to OpenAI for file: %s"), *ImagePath);
-    OpenAIProvider->CreateImageVariation(ImageVariationRequest, Auth);
+// Replace the OnImageVariationSuccess function with this new version
+void FShowdownEditorModule::OnImageEditSuccess(const FImageEditResponse& Response, const FOpenAIResponseMetadata& Meta)
+{
+    OpenAIProvider->OnCreateImageEditCompleted().RemoveAll(this);
+    OpenAIProvider->OnRequestError().RemoveAll(this);
+
+    if (Response.Data.Num() > 0)
+    {
+        const FString URL = Response.Data[0].URL;
+        UE_LOG(LogShowdownEditor, Warning, TEXT("OpenAI Image Edit SUCCESS! URL: %s"), *URL);
+
+        UE_LOG(LogShowdownEditor, Log, TEXT("Downloading new image from URL..."));
+        TSharedRef<IHttpRequest, ESPMode::ThreadSafe> HttpRequest = FHttpModule::Get().CreateRequest();
+        HttpRequest->OnProcessRequestComplete().BindRaw(this, &FShowdownEditorModule::OnImageDownloaded);
+        HttpRequest->SetURL(URL);
+        HttpRequest->SetVerb(TEXT("GET"));
+        HttpRequest->ProcessRequest();
+    }
+    else
+    {
+        UE_LOG(LogShowdownEditor, Error, TEXT("OpenAI Image Edit request succeeded but returned no data."));
+    }
+}
+
+// Replace the OnImageVariationError function with this new version
+void FShowdownEditorModule::OnImageEditError(const FString& URL, const FString& Content)
+{
+    OpenAIProvider->OnCreateImageEditCompleted().RemoveAll(this);
+    OpenAIProvider->OnRequestError().RemoveAll(this);
+    UE_LOG(LogShowdownEditor, Error, TEXT("OpenAI Image Edit FAILED. URL: %s, Error: %s"), *URL, *Content);
 }
 
 IMPLEMENT_MODULE(FShowdownEditorModule, ShowdownEditor);

@@ -26,7 +26,8 @@ public class ShowdownEditor : ModuleRules
                 "UnrealEd", // Important for editor access
                 "LevelEditor", // Important for menu extensions
                 "ShowdownQuest",
-                "OpenAI"
+                "OpenAI",
+                "HTTP"
             }
         );
     }

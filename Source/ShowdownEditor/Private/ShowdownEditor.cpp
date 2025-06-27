@@ -11,6 +11,7 @@
 #include "FuncLib/OpenAIFuncLib.h"
 #include "Engine/World.h" // Required for GetWorld()
 #include "TimerManager.h" // Required for FTimerHandle
+#include "HttpModule.h"
 
 DEFINE_LOG_CATEGORY_STATIC(LogShowdownEditor, Log, All);
 #define LOCTEXT_NAMESPACE "FShowdownEditorModule"
@@ -82,10 +83,48 @@ void FShowdownEditorModule::OnImageVariationSuccess(const FImageVariationRespons
     {
         const FString URL = Response.Data[0].URL;
         UE_LOG(LogShowdownEditor, Warning, TEXT("OpenAI Image Variation SUCCESS! URL: %s"), *URL);
+
+        // --- NEW ---
+        // Now, let's download the image from this URL
+        UE_LOG(LogShowdownEditor, Log, TEXT("Downloading new image from URL..."));
+        TSharedRef<IHttpRequest, ESPMode::ThreadSafe> HttpRequest = FHttpModule::Get().CreateRequest();
+        HttpRequest->OnProcessRequestComplete().BindRaw(this, &FShowdownEditorModule::OnImageDownloaded);
+        HttpRequest->SetURL(URL);
+        HttpRequest->SetVerb(TEXT("GET"));
+        HttpRequest->ProcessRequest();
     }
     else
     {
         UE_LOG(LogShowdownEditor, Error, TEXT("OpenAI Image Variation request succeeded but returned no data."));
+    }
+}
+
+// Add this new function to your ShowdownEditor.cpp file
+void FShowdownEditorModule::OnImageDownloaded(FHttpRequestPtr Request, FHttpResponsePtr Response, bool bWasSuccessful)
+{
+    if (bWasSuccessful && Response.IsValid())
+    {
+        // Get the raw image data from the response
+        TArray<uint8> ImageData = Response->GetContent();
+
+        // Create a new file path for the variation
+        FString Directory = FPaths::ProjectSavedDir() + TEXT("Screenshots/");
+        FString Filename = FString::Printf(TEXT("SceneVariation_%s.png"), *FDateTime::Now().ToString());
+        FString FilePath = FPaths::ConvertRelativePathToFull(Directory + Filename);
+
+        // Save the downloaded data to the new file
+        if (FFileHelper::SaveArrayToFile(ImageData, *FilePath))
+        {
+            UE_LOG(LogShowdownEditor, Warning, TEXT("New image variation successfully downloaded and saved to: %s"), *FilePath);
+        }
+        else
+        {
+            UE_LOG(LogShowdownEditor, Error, TEXT("Failed to save downloaded image."));
+        }
+    }
+    else
+    {
+        UE_LOG(LogShowdownEditor, Error, TEXT("Failed to download image from OpenAI URL."));
     }
 }
 

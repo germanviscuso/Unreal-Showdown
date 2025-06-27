@@ -1,5 +1,6 @@
 {
 	"FileVersion": 3,
+	"EngineAssociation": "5.5",
 	"Category": "",
 	"Description": "",
 	"Modules": [
@@ -10,6 +11,11 @@
 			"AdditionalDependencies": [
 				"Engine"
 			]
+		},
+		{
+		  "Name": "ShowdownEditor",
+		  "Type": "Editor",
+		  "LoadingPhase": "Default"
 		}
 	],
 	"Plugins": [
@@ -21,12 +27,16 @@
 				"Win64",
 				"Android"
 			]
+		},
+		{
+			"Name": "OpenAI",
+			"Enabled": true,
+			"MarketplaceURL": "com.epicgames.launcher://ue/marketplace/product/97eaf1e101ab4f29b5acbf7dacbd4d16"
 		}
 	],
 	"TargetPlatforms": [
 		"Android",
 		"AllDesktop",
 		"WindowsNoEditor"
-	],
-	"EngineAssociation": "5.5"
+	]
 }

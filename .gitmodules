@@ -1,0 +1,4 @@
+[submodule "Plugins/OpenAI"]
+	path = Plugins/OpenAI
+	url = https://github.com/germanviscuso/UnrealOpenAIPlugin.git
+	branch = 5.5

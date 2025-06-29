@@ -27,7 +27,9 @@ public class ShowdownEditor : ModuleRules
                 "LevelEditor", // Important for menu extensions
                 "ShowdownQuest",
                 "OpenAI",
-                "HTTP"
+                "HTTP",
+                "ImageWrapper",
+                "RenderCore"
             }
         );
     }

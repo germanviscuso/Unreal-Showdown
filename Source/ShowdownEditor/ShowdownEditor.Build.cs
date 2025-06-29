@@ -29,7 +29,11 @@ public class ShowdownEditor : ModuleRules
                 "OpenAI",
                 "HTTP",
                 "ImageWrapper",
-                "RenderCore"
+                "RenderCore",
+                "UMG",
+                "UMGEditor",
+                "Blutility",
+                "EditorSubsystem"
             }
         );
     }

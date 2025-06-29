@@ -9,15 +9,14 @@ class FShowdownEditorCommands : public TCommands<FShowdownEditorCommands>
 public:
     FShowdownEditorCommands()
         : TCommands<FShowdownEditorCommands>(
-            TEXT("ShowdownEditor"), // Context name
-            NSLOCTEXT("Contexts", "ShowdownEditor", "Showdown Editor"), // Display name
+            TEXT("ShowdownEditor"),
+            NSLOCTEXT("Contexts", "ShowdownEditor", "Showdown Editor"),
             NAME_None,
             FAppStyle::GetAppStyleSetName()
         )
     {
     }
 
-    // TCommands<> interface
     virtual void RegisterCommands() override;
 
 public:

@@ -9,87 +9,80 @@
 #include "Editor/EditorEngine.h"
 #include "Provider/OpenAIProvider.h"
 #include "FuncLib/OpenAIFuncLib.h"
-#include "Engine/World.h" // Required for GetWorld()
-#include "TimerManager.h" // Required for FTimerHandle
+#include "Engine/World.h"
+#include "TimerManager.h"
 #include "HttpModule.h"
 #include "IImageWrapperModule.h"
 #include "IImageWrapper.h"
+#include "EditorUtilitySubsystem.h"
+#include "EditorUtilityWidgetBlueprint.h"
 
-DEFINE_LOG_CATEGORY_STATIC(LogShowdownEditor, Log, All);
+// The DEFINE macro goes here and ONLY here.
+//DEFINE_LOG_CATEGORY_STATIC(LogShowdownEditor, Log, All);
+
 #define LOCTEXT_NAMESPACE "FShowdownEditorModule"
 
-// Add this helper function to your FShowdownEditorModule class in the .h or .cpp file
-// It returns the path to the new, masked image, or an empty string on failure.
+// NOTE: I am moving your CreateMaskedImage function into this file, as it doesn't belong to a class.
+// If it is a member function of FShowdownEditorModule, its definition should start with FShowdownEditorModule::
 FString CreateMaskedImage(const FString& OriginalImagePath)
 {
-    // --- 1. Load the original screenshot file into a byte array ---
     TArray<uint8> FileData;
     if (!FFileHelper::LoadFileToArray(FileData, *OriginalImagePath))
     {
-        UE_LOG(LogShowdownEditor, Error, TEXT("Failed to load original image file: %s"), *OriginalImagePath);
+        UE_LOG(LogTemp, Error, TEXT("Failed to load original image file: %s"), *OriginalImagePath);
         return FString();
     }
 
-    // --- 2. Use the Image Wrapper to decode the PNG into raw color data ---
     IImageWrapperModule& ImageWrapperModule = FModuleManager::LoadModuleChecked<IImageWrapperModule>(FName("ImageWrapper"));
     TSharedPtr<IImageWrapper> ImageWrapper = ImageWrapperModule.CreateImageWrapper(EImageFormat::PNG);
 
     if (ImageWrapper.IsValid() && ImageWrapper->SetCompressed(FileData.GetData(), FileData.Num()))
     {
         TArray64<uint8> RawColorDataBytes;
-        // Use ERGBFormat::BGRA because that's what Unreal's FColor expects.
         if (ImageWrapper->GetRaw(ERGBFormat::BGRA, 8, RawColorDataBytes))
         {
             const int32 Width = ImageWrapper->GetWidth();
             const int32 Height = ImageWrapper->GetHeight();
-
-            // Add this after successfully getting RawColorDataBytes
             FColor* RawColorData = reinterpret_cast<FColor*>(RawColorDataBytes.GetData());
 
-            // --- 3. This is the core logic: Create a transparent area (a mask) ---
-            // For this example, we'll erase a 256x256 square in the center of the image.
             const int32 MaskSize = 1024;
             const int32 StartX = (Width / 2) - (MaskSize / 2);
             const int32 StartY = (Height / 2) - (MaskSize / 2);
 
-            // ...then use RawColorData in your masking loop:
             for (int32 y = StartY; y < StartY + MaskSize; ++y)
             {
                 for (int32 x = StartX; x < StartX + MaskSize; ++x)
                 {
-                    // Check bounds just in case
                     if (x >= 0 && x < Width && y >= 0 && y < Height)
                     {
-                        // Set the Alpha channel to 0 (fully transparent)
                         RawColorData[y * Width + x].A = 0;
                     }
                 }
             }
 
-            // --- 4. Compress the modified raw data back into a PNG byte array ---
             TArray<uint8> NewFileData;
-            ImageWrapper->SetRaw(RawColorData, RawColorDataBytes.Num() * sizeof(FColor), Width, Height, ERGBFormat::BGRA, 8);
+            // The first parameter for SetRaw should be a pointer to the data buffer
+            ImageWrapper->SetRaw(RawColorDataBytes.GetData(), RawColorDataBytes.Num(), Width, Height, ERGBFormat::BGRA, 8);
             NewFileData = ImageWrapper->GetCompressed(100);
 
-            // --- 5. Save the new masked image to a file ---
             FString Directory = FPaths::ProjectSavedDir() + TEXT("Screenshots/");
             FString NewFilename = FString::Printf(TEXT("MaskedCapture_%s.png"), *FDateTime::Now().ToString());
             FString NewFilePath = FPaths::ConvertRelativePathToFull(Directory + NewFilename);
 
             if (FFileHelper::SaveArrayToFile(NewFileData, *NewFilePath))
             {
-                UE_LOG(LogShowdownEditor, Log, TEXT("Successfully created masked image at: %s"), *NewFilePath);
-                return NewFilePath; // Return the path to the NEW image
+                UE_LOG(LogTemp, Log, TEXT("Successfully created masked image at: %s"), *NewFilePath);
+                return NewFilePath;
             }
             else
             {
-                UE_LOG(LogShowdownEditor, Error, TEXT("Failed to save masked image file."));
+                UE_LOG(LogTemp, Error, TEXT("Failed to save masked image file."));
             }
         }
     }
-
-    return FString(); // Return empty on failure
+    return FString();
 }
+
 
 void FShowdownEditorModule::StartupModule()
 {
@@ -123,93 +116,160 @@ void FShowdownEditorModule::ShutdownModule()
     FShowdownEditorCommands::Unregister();
 }
 
+//void FShowdownEditorModule::OnCaptureScenePressed()
+//{
+//    FString Directory = FPaths::ProjectSavedDir() + TEXT("Screenshots/");
+//    FString Filename = FString::Printf(TEXT("SceneCapture_%s.png"), *FDateTime::Now().ToString());
+//    CachedScreenshotPath = FPaths::ConvertRelativePathToFull(Directory + Filename);
+//
+//    IPlatformFile& PlatformFile = FPlatformFileManager::Get().GetPlatformFile();
+//    PlatformFile.CreateDirectoryTree(*Directory);
+//
+//    FScreenshotRequest::RequestScreenshot(CachedScreenshotPath, false, false);
+//    UE_LOG(LogTemp, Log, TEXT("Screenshot requested, path cached: %s"), *CachedScreenshotPath);
+//
+//    const FString WidgetBlueprintPath = TEXT("/Game/DreamLite/BP_EditorUI.BP_EditorUI");
+//    UObject* WidgetBlueprintObject = LoadObject<UObject>(nullptr, *WidgetBlueprintPath);
+//    UEditorUtilityWidgetBlueprint* EditorWidgetBlueprint = Cast<UEditorUtilityWidgetBlueprint>(WidgetBlueprintObject);
+//
+//    if (EditorWidgetBlueprint)
+//    {
+//        UEditorUtilitySubsystem* EditorUtilitySubsystem = GEditor->GetEditorSubsystem<UEditorUtilitySubsystem>();
+//        if (EditorUtilitySubsystem)
+//        {
+//            EditorUtilitySubsystem->SpawnAndRegisterTab(EditorWidgetBlueprint);
+//        }
+//    }
+//    else
+//    {
+//        UE_LOG(LogTemp, Error, TEXT("Failed to load Editor Utility Widget at path: %s"), *WidgetBlueprintPath);
+//    }
+//}
+
 void FShowdownEditorModule::OnCaptureScenePressed()
 {
+    // --- Immediately start the screenshot process ---
     FString Directory = FPaths::ProjectSavedDir() + TEXT("Screenshots/");
     FString Filename = FString::Printf(TEXT("SceneCapture_%s.png"), *FDateTime::Now().ToString());
-    FString FilePath = FPaths::ConvertRelativePathToFull(Directory + Filename);
+    CachedScreenshotPath = FPaths::ConvertRelativePathToFull(Directory + Filename);
 
     IPlatformFile& PlatformFile = FPlatformFileManager::Get().GetPlatformFile();
     PlatformFile.CreateDirectoryTree(*Directory);
 
-    // This takes the screenshot and saves it. It is an asynchronous operation.
-    FScreenshotRequest::RequestScreenshot(FilePath, false, false);
+    FScreenshotRequest::RequestScreenshot(CachedScreenshotPath, false, false);
+    UE_LOG(LogTemp, Log, TEXT("Screenshot requested, path cached: %s"), *CachedScreenshotPath);
 
-    UE_LOG(LogShowdownEditor, Log, TEXT("Scene capture requested. Will be saved to: %s. Processing and sending to OpenAI in 2 seconds..."), *FilePath);
+    // --- NEW DEBUGGING LOGIC ---
+    UE_LOG(LogTemp, Log, TEXT("--- Starting Widget Load Debug ---"));
+
+    const FString WidgetBlueprintPath = TEXT("/Game/DreamLite/BP_EditorUI.BP_EditorUI");
+    UE_LOG(LogTemp, Log, TEXT("1. Attempting to load UObject at path: %s"), *WidgetBlueprintPath);
+
+    // STEP 1: Try to load the object from disk.
+    UObject* WidgetBlueprintObject = LoadObject<UObject>(nullptr, *WidgetBlueprintPath);
+
+    if (!WidgetBlueprintObject)
+    {
+        UE_LOG(LogTemp, Error, TEXT("2. DEBUG FAILED: LoadObject returned NULL. The engine cannot find the asset at this path. This could be a file corruption or a very deep engine bug."));
+        UE_LOG(LogTemp, Log, TEXT("--- Widget Load Debug Finished ---"));
+        return; // Stop here
+    }
+
+    UE_LOG(LogTemp, Log, TEXT("2. DEBUG SUCCESS: LoadObject found an asset named '%s'."), *WidgetBlueprintObject->GetName());
+    UE_LOG(LogTemp, Log, TEXT("3. The found asset's C++ class is: '%s'"), *WidgetBlueprintObject->GetClass()->GetName());
+
+    // STEP 2: Try to cast the found object to the type we need.
+    UEditorUtilityWidgetBlueprint* EditorWidgetBlueprint = Cast<UEditorUtilityWidgetBlueprint>(WidgetBlueprintObject);
+
+    if (!EditorWidgetBlueprint)
+    {
+        UE_LOG(LogTemp, Error, TEXT("4. DEBUG FAILED: Cast to UEditorUtilityWidgetBlueprint failed. The asset you created is not the correct type, even if its parent is set correctly in the editor."));
+        UE_LOG(LogTemp, Log, TEXT("--- Widget Load Debug Finished ---"));
+        return; // Stop here
+    }
+
+    UE_LOG(LogTemp, Log, TEXT("4. DEBUG SUCCESS: Cast to UEditorUtilityWidgetBlueprint was successful."));
+
+    // STEP 3: Try to get the subsystem and spawn the tab.
+    UEditorUtilitySubsystem* EditorUtilitySubsystem = GEditor->GetEditorSubsystem<UEditorUtilitySubsystem>();
+    if (EditorUtilitySubsystem)
+    {
+        UE_LOG(LogTemp, Log, TEXT("5. Spawning tab now..."));
+        EditorUtilitySubsystem->SpawnAndRegisterTab(EditorWidgetBlueprint);
+    }
+    else
+    {
+        UE_LOG(LogTemp, Error, TEXT("5. DEBUG FAILED: Could not get EditorUtilitySubsystem."));
+    }
+
+    UE_LOG(LogTemp, Log, TEXT("--- Widget Load Debug Finished ---"));
+}
+
+void FShowdownEditorModule::ExecuteCaptureAndEdit(const FString& Prompt)
+{
+    if (CachedScreenshotPath.IsEmpty())
+    {
+        UE_LOG(LogTemp, Error, TEXT("Execute called but there is no valid cached screenshot path."));
+        return;
+    }
+
+    FString ScreenshotToProcess = CachedScreenshotPath;
+    CachedScreenshotPath.Empty();
 
     FTimerHandle TimerHandle;
     FTimerDelegate TimerDelegate;
 
-    // We use a lambda to capture the original file path
-    TimerDelegate.BindLambda([this, FilePath]()
+    TimerDelegate.BindLambda([this, ScreenshotToProcess, Prompt]()
         {
-            // First, create the masked version of the screenshot
-            // The FPaths::FileExists is important because the screenshot might not be saved yet.
-            if (FPaths::FileExists(FilePath))
+            if (FPaths::FileExists(ScreenshotToProcess))
             {
-                const FString MaskedImagePath = CreateMaskedImage(FilePath);
-
-                // Only proceed if the masked image was created successfully
+                const FString MaskedImagePath = CreateMaskedImage(ScreenshotToProcess);
                 if (!MaskedImagePath.IsEmpty())
                 {
-                    // Now, send the *masked* image to OpenAI
-                    SendImageToOpenAI(MaskedImagePath);
-                }
-                else
-                {
-                    UE_LOG(LogShowdownEditor, Error, TEXT("Could not create a masked image from the screenshot. Aborting OpenAI request."));
+                    SendImageToOpenAI(MaskedImagePath, Prompt);
                 }
             }
             else
             {
-                UE_LOG(LogShowdownEditor, Error, TEXT("Screenshot file was not found after 2 seconds. Aborting OpenAI request."));
+                UE_LOG(LogTemp, Warning, TEXT("Screenshot file was not found after waiting."));
             }
         });
 
-    // We wait 2 seconds to give the engine time to write the screenshot file to disk.
-    // You might need to make this longer for very high-resolution screenshots.
     if (GEditor->GetEditorWorldContext().World())
     {
-        GEditor->GetEditorWorldContext().World()->GetTimerManager().SetTimer(TimerHandle, TimerDelegate, 2.0f, false);
+        GEditor->GetEditorWorldContext().World()->GetTimerManager().SetTimer(TimerHandle, TimerDelegate, 1.0f, false);
     }
 }
 
-// Add this new function to your ShowdownEditor.cpp file
 void FShowdownEditorModule::OnImageDownloaded(FHttpRequestPtr Request, FHttpResponsePtr Response, bool bWasSuccessful)
 {
     if (bWasSuccessful && Response.IsValid())
     {
-        // Get the raw image data from the response
         TArray<uint8> ImageData = Response->GetContent();
-
-        // Create a new file path for the variation
         FString Directory = FPaths::ProjectSavedDir() + TEXT("Screenshots/");
         FString Filename = FString::Printf(TEXT("SceneEdit_%s.png"), *FDateTime::Now().ToString());
         FString FilePath = FPaths::ConvertRelativePathToFull(Directory + Filename);
 
-        // Save the downloaded data to the new file
         if (FFileHelper::SaveArrayToFile(ImageData, *FilePath))
         {
-            UE_LOG(LogShowdownEditor, Warning, TEXT("New image variation successfully downloaded and saved to: %s"), *FilePath);
+            UE_LOG(LogTemp, Warning, TEXT("New image edit successfully downloaded and saved to: %s"), *FilePath);
         }
         else
         {
-            UE_LOG(LogShowdownEditor, Error, TEXT("Failed to save downloaded image."));
+            UE_LOG(LogTemp, Error, TEXT("Failed to save downloaded image."));
         }
     }
     else
     {
-        UE_LOG(LogShowdownEditor, Error, TEXT("Failed to download image from OpenAI URL."));
+        UE_LOG(LogTemp, Error, TEXT("Failed to download image from OpenAI URL."));
     }
 }
 
-// Replace the SendImageToOpenAI function in ShowdownEditor.cpp
-
-void FShowdownEditorModule::SendImageToOpenAI(const FString& ImagePath)
+void FShowdownEditorModule::SendImageToOpenAI(const FString& ImagePath, const FString& Prompt)
 {
     if (!FPaths::FileExists(ImagePath))
     {
-        UE_LOG(LogShowdownEditor, Error, TEXT("Screenshot file does not exist at path: %s. Cannot send to OpenAI."), *ImagePath);
+        UE_LOG(LogTemp, Error, TEXT("Screenshot file does not exist at path: %s. Cannot send to OpenAI."), *ImagePath);
         return;
     }
 
@@ -218,28 +278,24 @@ void FShowdownEditorModule::SendImageToOpenAI(const FString& ImagePath)
 
     if (Auth.APIKey.IsEmpty())
     {
-        UE_LOG(LogShowdownEditor, Error, TEXT("Failed to load OpenAI API key from OpenAIAuth.ini"));
+        UE_LOG(LogTemp, Error, TEXT("Failed to load OpenAI API key from OpenAIAuth.ini"));
         return;
     }
 
-    // We now use FOpenAIImageEdit and set the prompt.
     FOpenAIImageEdit ImageEditRequest;
-    ImageEditRequest.Image.Add(ImagePath); // The path to the image file
-    ImageEditRequest.Prompt = TEXT("A moody, post-apocalyptic version of this scene, with rubble and overgrown vines. Buildings must have vines. Sky should be cloudy and stormy"); // prompt
+    ImageEditRequest.Image.Add(ImagePath);
+    ImageEditRequest.Prompt = Prompt;
     ImageEditRequest.N = 1;
     ImageEditRequest.Size = UOpenAIFuncLib::OpenAIImageSizeDalle2ToString(EImageSizeDalle2::Size_1024x1024);
     ImageEditRequest.Response_Format = UOpenAIFuncLib::OpenAIImageFormatToString(EOpenAIImageFormat::URL);
 
-    // Bind the new success and error handlers
     OpenAIProvider->OnCreateImageEditCompleted().AddRaw(this, &FShowdownEditorModule::OnImageEditSuccess);
     OpenAIProvider->OnRequestError().AddRaw(this, &FShowdownEditorModule::OnImageEditError);
 
-    UE_LOG(LogShowdownEditor, Log, TEXT("Sending image EDIT request to OpenAI for file: %s"), *ImagePath);
-    // Call the correct API function
+    UE_LOG(LogTemp, Log, TEXT("Sending image EDIT request to OpenAI for file: %s"), *ImagePath);
     OpenAIProvider->CreateImageEdit(ImageEditRequest, Auth);
 }
 
-// Replace the OnImageVariationSuccess function with this new version
 void FShowdownEditorModule::OnImageEditSuccess(const FImageEditResponse& Response, const FOpenAIResponseMetadata& Meta)
 {
     OpenAIProvider->OnCreateImageEditCompleted().RemoveAll(this);
@@ -248,9 +304,9 @@ void FShowdownEditorModule::OnImageEditSuccess(const FImageEditResponse& Respons
     if (Response.Data.Num() > 0)
     {
         const FString URL = Response.Data[0].URL;
-        UE_LOG(LogShowdownEditor, Warning, TEXT("OpenAI Image Edit SUCCESS! URL: %s"), *URL);
+        UE_LOG(LogTemp, Warning, TEXT("OpenAI Image Edit SUCCESS! URL: %s"), *URL);
 
-        UE_LOG(LogShowdownEditor, Log, TEXT("Downloading new image from URL..."));
+        UE_LOG(LogTemp, Log, TEXT("Downloading new image from URL..."));
         TSharedRef<IHttpRequest, ESPMode::ThreadSafe> HttpRequest = FHttpModule::Get().CreateRequest();
         HttpRequest->OnProcessRequestComplete().BindRaw(this, &FShowdownEditorModule::OnImageDownloaded);
         HttpRequest->SetURL(URL);
@@ -259,17 +315,17 @@ void FShowdownEditorModule::OnImageEditSuccess(const FImageEditResponse& Respons
     }
     else
     {
-        UE_LOG(LogShowdownEditor, Error, TEXT("OpenAI Image Edit request succeeded but returned no data."));
+        UE_LOG(LogTemp, Error, TEXT("OpenAI Image Edit request succeeded but returned no data."));
     }
 }
 
-// Replace the OnImageVariationError function with this new version
 void FShowdownEditorModule::OnImageEditError(const FString& URL, const FString& Content)
 {
     OpenAIProvider->OnCreateImageEditCompleted().RemoveAll(this);
     OpenAIProvider->OnRequestError().RemoveAll(this);
-    UE_LOG(LogShowdownEditor, Error, TEXT("OpenAI Image Edit FAILED. URL: %s, Error: %s"), *URL, *Content);
+    UE_LOG(LogTemp, Error, TEXT("OpenAI Image Edit FAILED. URL: %s, Error: %s"), *URL, *Content);
 }
 
 IMPLEMENT_MODULE(FShowdownEditorModule, ShowdownEditor);
+
 #undef LOCTEXT_NAMESPACE

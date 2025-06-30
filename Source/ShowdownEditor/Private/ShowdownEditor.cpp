@@ -16,6 +16,7 @@
 #include "IImageWrapper.h"
 #include "EditorUtilitySubsystem.h"
 #include "EditorUtilityWidgetBlueprint.h"
+#include <ShowdownWidgetBase.h>
 
 // The DEFINE macro goes here and ONLY here.
 //DEFINE_LOG_CATEGORY_STATIC(LogShowdownEditor, Log, All);
@@ -83,6 +84,33 @@ FString CreateMaskedImage(const FString& OriginalImagePath)
     return FString();
 }
 
+// This helper function finds our active widget tab and casts it to our C++ base class
+// Replace your existing GetActiveShowdownWidget function with this one.
+
+UShowdownWidgetBase* GetActiveShowdownWidget()
+{
+    UEditorUtilitySubsystem* EditorUtilitySubsystem = GEditor->GetEditorSubsystem<UEditorUtilitySubsystem>();
+    if (!EditorUtilitySubsystem)
+    {
+        UE_LOG(LogTemp, Error, TEXT("GetActiveShowdownWidget: Could not get the Editor Utility Subsystem."));
+        return nullptr;
+    }
+
+    const FString WidgetBlueprintPath = TEXT("/Game/DreamLite/BP_EditorUI.BP_EditorUI");
+    UEditorUtilityWidgetBlueprint* EditorWidgetBlueprint = LoadObject<UEditorUtilityWidgetBlueprint>(nullptr, *WidgetBlueprintPath);
+
+    if (EditorWidgetBlueprint)
+    {
+        UEditorUtilityWidget* FoundWidget = EditorUtilitySubsystem->FindUtilityWidgetFromBlueprint(EditorWidgetBlueprint);
+
+        if (FoundWidget)
+        {
+            return Cast<UShowdownWidgetBase>(FoundWidget);
+        }
+    }
+
+    return nullptr;
+}
 
 void FShowdownEditorModule::StartupModule()
 {
@@ -216,6 +244,18 @@ void FShowdownEditorModule::ExecuteCaptureAndEdit(const FString& Prompt)
     FString ScreenshotToProcess = CachedScreenshotPath;
     CachedScreenshotPath.Empty();
 
+    // --- START NEW DEBUG CODE ---
+    if (UShowdownWidgetBase* ActiveWidget = GetActiveShowdownWidget())
+    {
+        UE_LOG(LogTemp, Log, TEXT("C++ DEBUG: Found the active widget! Calling OnSetOriginalImage..."));
+        ActiveWidget->OnSetOriginalImage(ScreenshotToProcess);
+    }
+    else
+    {
+        UE_LOG(LogTemp, Error, TEXT("C++ DEBUG: FAILED to find the active widget when trying to set original image."));
+    }
+    // --- END NEW DEBUG CODE ---
+
     FTimerHandle TimerHandle;
     FTimerDelegate TimerDelegate;
 
@@ -253,6 +293,18 @@ void FShowdownEditorModule::OnImageDownloaded(FHttpRequestPtr Request, FHttpResp
         if (FFileHelper::SaveArrayToFile(ImageData, *FilePath))
         {
             UE_LOG(LogTemp, Warning, TEXT("New image edit successfully downloaded and saved to: %s"), *FilePath);
+
+            // --- START NEW DEBUG CODE ---
+            if (UShowdownWidgetBase* ActiveWidget = GetActiveShowdownWidget())
+            {
+                UE_LOG(LogTemp, Log, TEXT("C++ DEBUG: Found the active widget! Calling OnSetGeneratedImage..."));
+                ActiveWidget->OnSetGeneratedImage(FilePath);
+            }
+            else
+            {
+                UE_LOG(LogTemp, Error, TEXT("C++ DEBUG: FAILED to find the active widget when trying to set generated image."));
+            }
+            // --- END NEW DEBUG CODE ---
         }
         else
         {
